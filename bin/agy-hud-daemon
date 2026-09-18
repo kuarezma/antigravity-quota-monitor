@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Antigravity Quota HUD Daemon v3
-Sohbet giriş kutusunun hemen üzerinde tek satır, dinamik kapsül şeklinde
+Antigravity Quota HUD Daemon v4
+Sohbet giriş kutusunun hemen üzerinde dinamik kapsül şeklinde
 canlı model kotasını, yüzdeleri ve sıfırlanma süresini gösterir.
+Geniş ekranda tek satır; dar ekranda zarifçe iki satıra geçer.
 """
 
 import asyncio
@@ -55,7 +56,7 @@ HUD_JS_TEMPLATE = """
         if (!inputCard || !inputCard.parentElement) return null;
 
         let bar = document.getElementById('chat-dock-quota-bar');
-        if (bar && (bar.getAttribute('data-v') !== '3' || bar.nextElementSibling !== inputCard)) {
+        if (bar && (bar.getAttribute('data-v') !== '4' || bar.nextElementSibling !== inputCard)) {
             bar.remove();
             bar = null;
         }
@@ -63,17 +64,19 @@ HUD_JS_TEMPLATE = """
         if (!bar) {
             bar = document.createElement('div');
             bar.id = 'chat-dock-quota-bar';
-            bar.setAttribute('data-v', '3');
+            bar.setAttribute('data-v', '4');
             bar.style.cssText = `
                 display: flex;
+                flex-wrap: wrap;
                 align-items: center;
                 justify-content: center;
-                gap: 8px;
+                column-gap: 8px;
+                row-gap: 4px;
                 width: fit-content;
                 max-width: 100%;
                 margin: 0 auto 6px auto;
                 padding: 4px 12px;
-                height: 26px;
+                min-height: 26px;
                 box-sizing: border-box;
                 background: rgba(24, 24, 27, 0.85);
                 backdrop-filter: blur(16px);
@@ -84,9 +87,8 @@ HUD_JS_TEMPLATE = """
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 font-size: 11px;
                 line-height: 1;
-                white-space: nowrap;
                 user-select: none;
-                transition: border-color 0.2s, background 0.2s;
+                transition: border-color 0.2s, background 0.2s, border-radius 0.2s;
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
             `;
 
@@ -98,28 +100,46 @@ HUD_JS_TEMPLATE = """
             });
 
             bar.innerHTML = `
-                <span style="font-size:12px; line-height:1; display:inline-flex; align-items:center;">⚡</span>
-                <span style="font-weight:600; color:#94a3b8; white-space:nowrap; line-height:1;">Gemini 5s:</span>
-                <span id="dock-val-5h" style="font-weight:700; font-family:monospace; color:#34d399; font-size:11px; white-space:nowrap; line-height:1;">--%</span>
-                <div id="dock-track-5h" style="width:36px; height:4px; background:rgba(255,255,255,0.08); border-radius:99px; overflow:hidden; flex-shrink:0;">
-                    <div id="dock-fill-5h" style="width:100%; height:100%; background:linear-gradient(90deg, #10b981, #06b6d4); border-radius:99px; transition:width 0.4s ease;"></div>
+                <div id="dock-chunk-primary" style="display:inline-flex; align-items:center; gap:6px; flex-shrink:0; white-space:nowrap; line-height:1;">
+                    <span style="font-size:12px; line-height:1; display:inline-flex; align-items:center;">⚡</span>
+                    <span style="font-weight:600; color:#94a3b8; line-height:1;">Gemini 5s:</span>
+                    <span id="dock-val-5h" style="font-weight:700; font-family:monospace; color:#34d399; font-size:11px; line-height:1;">--%</span>
+                    <div id="dock-track-5h" style="width:36px; height:4px; background:rgba(255,255,255,0.08); border-radius:99px; overflow:hidden; flex-shrink:0;">
+                        <div id="dock-fill-5h" style="width:100%; height:100%; background:linear-gradient(90deg, #10b981, #06b6d4); border-radius:99px; transition:width 0.4s ease;"></div>
+                    </div>
+                    <span style="color:rgba(255,255,255,0.12); margin:0 2px; line-height:1;">|</span>
+                    <span style="font-size:11px; line-height:1; display:inline-flex; align-items:center;">⏱️</span>
+                    <span id="dock-val-time" style="font-family:monospace; color:#fbbf24; font-weight:600; line-height:1;">00:00:00</span>
                 </div>
-                <span style="color:rgba(255,255,255,0.12); margin:0 1px; line-height:1;">|</span>
-                <span style="font-size:11px; line-height:1; display:inline-flex; align-items:center;">⏱️</span>
-                <span id="dock-val-time" style="font-family:monospace; color:#fbbf24; font-weight:600; white-space:nowrap; line-height:1;">Hesaplanıyor...</span>
-                <span style="color:rgba(255,255,255,0.12); margin:0 1px; line-height:1;">|</span>
-                <span style="color:#71717a; white-space:nowrap; line-height:1;">Haftalık:</span>
-                <span id="dock-val-weekly" style="font-family:monospace; color:#c084fc; font-weight:600; white-space:nowrap; line-height:1;">--%</span>
-                <span style="color:rgba(255,255,255,0.12); margin:0 1px; line-height:1;">|</span>
-                <span style="color:#71717a; white-space:nowrap; line-height:1;">Claude:</span>
-                <span id="dock-val-claude" style="font-family:monospace; color:#34d399; font-weight:600; white-space:nowrap; line-height:1;">--%</span>
-                <div id="dock-sync-status" title="Canlı otomatik senkronize ediliyor (Tıklayarak da yenileyebilirsiniz)" style="display:inline-flex; align-items:center; gap:4px; cursor:pointer; margin-left:2px;">
-                    <span id="dock-sync-dot" style="width:5px; height:5px; border-radius:50%; background:#10b981; display:inline-block; box-shadow:0 0 4px rgba(16,185,129,0.5); transition:background 0.3s, transform 0.3s;"></span>
-                    <span id="dock-sync-text" style="color:#71717a; font-size:10px; font-weight:500; line-height:1;">Canlı</span>
+                <div id="dock-chunk-secondary" style="display:inline-flex; align-items:center; gap:6px; flex-shrink:0; white-space:nowrap; line-height:1;">
+                    <span id="dock-chunk-sep" style="color:rgba(255,255,255,0.12); margin:0 2px; line-height:1;">|</span>
+                    <span style="color:#71717a; line-height:1;">Haftalık:</span>
+                    <span id="dock-val-weekly" style="font-family:monospace; color:#c084fc; font-weight:600; line-height:1;">--%</span>
+                    <span style="color:rgba(255,255,255,0.12); margin:0 1px; line-height:1;">|</span>
+                    <span style="color:#71717a; line-height:1;">Claude:</span>
+                    <span id="dock-val-claude" style="font-family:monospace; color:#34d399; font-weight:600; line-height:1;">--%</span>
+                    <div id="dock-sync-status" title="Canlı otomatik senkronize ediliyor (Tıklayarak da yenileyebilirsiniz)" style="display:inline-flex; align-items:center; gap:4px; cursor:pointer; margin-left:2px;">
+                        <span id="dock-sync-dot" style="width:5px; height:5px; border-radius:50%; background:#10b981; display:inline-block; box-shadow:0 0 4px rgba(16,185,129,0.5); transition:background 0.3s, transform 0.3s;"></span>
+                        <span id="dock-sync-text" style="color:#71717a; font-size:10px; font-weight:500; line-height:1;">Canlı</span>
+                    </div>
                 </div>
             `;
 
             inputCard.parentElement.insertBefore(bar, inputCard);
+
+            const ro = new ResizeObserver(() => {
+                const sep = document.getElementById('dock-chunk-sep');
+                if (bar.offsetHeight > 32) {
+                    if (sep) sep.style.display = 'none';
+                    bar.style.borderRadius = '12px';
+                    bar.style.padding = '5px 12px';
+                } else {
+                    if (sep) sep.style.display = 'inline';
+                    bar.style.borderRadius = '9999px';
+                    bar.style.padding = '4px 12px';
+                }
+            });
+            ro.observe(bar);
 
             const syncStatus = document.getElementById('dock-sync-status');
             if (syncStatus) {
@@ -228,8 +248,8 @@ HUD_JS_TEMPLATE = """
     ensureBar();
     fetchQuotaData();
 
-    if (!window.__agy_quota_v3_setup) {
-        window.__agy_quota_v3_setup = true;
+    if (!window.__agy_quota_v4_setup) {
+        window.__agy_quota_v4_setup = true;
         setInterval(updateTick, 1000);
         setInterval(fetchQuotaData, 10000);
         window.addEventListener('focus', fetchQuotaData);
@@ -258,7 +278,7 @@ async def cdp_eval(ws, expression):
     return None
 
 async def run_daemon():
-    print("Starting Antigravity Single-Line Quota HUD Daemon v3...", flush=True)
+    print("Starting Antigravity Responsive Quota HUD Daemon v4...", flush=True)
     while True:
         try:
             port = get_cdp_port()
@@ -274,12 +294,11 @@ async def run_daemon():
                     if ws_url:
                         try:
                             async with websockets.connect(ws_url, open_timeout=1.5, close_timeout=1.0) as ws:
-                                # Ensure v3 dock bar exists and legacy elements are removed
-                                check_expr = '!!document.getElementById("chat-dock-quota-bar") && document.getElementById("chat-dock-quota-bar").getAttribute("data-v") === "3" && !document.getElementById("antigravity-quota-hud") && !document.getElementById("test-quota-banner")'
+                                check_expr = '!!document.getElementById("chat-dock-quota-bar") && document.getElementById("chat-dock-quota-bar").getAttribute("data-v") === "4" && !document.getElementById("antigravity-quota-hud") && !document.getElementById("test-quota-banner")'
                                 is_clean = await cdp_eval(ws, check_expr)
                                 if not is_clean:
                                     await cdp_eval(ws, code_to_inject)
-                                    print(f"Updated Quota Bar v3 on: {p.get('title')}", flush=True)
+                                    print(f"Updated Quota Bar v4 on: {p.get('title')}", flush=True)
                         except Exception:
                             pass
         except Exception:
