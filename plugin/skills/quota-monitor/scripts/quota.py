@@ -1,11 +1,42 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Antigravity Quota Monitor CLI (agy-quota)
-Anlık model kotası, kalan yüzdeler ve sıfırlanma süresi takipçisi.
+Antigravity Quota Monitor CLI / Asistan Becerisi
+Yerel LanguageServer RPC veya CloudCode API üzerinden kota sorgular.
 """
 
 import sys
+import os
+import importlib.util
+
+# 1. Öncelikle repodaki veya sistemdeki agy-quota çekirdeğini kullanmayı dene
+script_dir = os.path.dirname(os.path.abspath(__file__))
+repo_bin = os.path.abspath(os.path.join(script_dir, '../../../../bin/agy-quota'))
+local_bin = os.path.expanduser('~/.local/bin/agy-quota')
+
+for candidate in [repo_bin, local_bin]:
+    if os.path.isfile(candidate):
+        try:
+            spec = importlib.util.spec_from_file_location("agy_quota_core", candidate)
+            if spec and spec.loader:
+                core = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(core)
+                if __name__ == '__main__':
+                    if '--json' in sys.argv:
+                        data, source = core.get_quota()
+                        import json
+                        if data:
+                            print(json.dumps({'source': source, 'data': data}, indent=2, ensure_ascii=False))
+                        else:
+                            print(json.dumps({'error': 'could not fetch quota'}))
+                            sys.exit(1)
+                    else:
+                        core.print_cli()
+                sys.exit(0)
+        except Exception:
+            pass
+
+# 2. İzolasyon durumunda güvenli yedek (Fallback) implementasyonu
 import subprocess
 import re
 import json
@@ -14,7 +45,6 @@ import ssl
 from datetime import datetime, timezone
 
 def fetch_quota_language_server():
-    """Antigravity yerel LanguageServer RPC üzerinden kota bilgisini çeker."""
     try:
         ps_out = subprocess.check_output(['ps', 'aux'], stderr=subprocess.DEVNULL).decode('utf-8')
         csrf_token = None
@@ -24,7 +54,9 @@ def fetch_quota_language_server():
                 m_csrf = re.search(r'--csrf_token\s+([a-f0-9\-]+)', line)
                 if m_csrf:
                     csrf_token = m_csrf.group(1)
-                    target_pid = line.split()[1]
+                    parts = line.split()
+                    if len(parts) > 1:
+                        target_pid = parts[1]
                     break
 
         if not csrf_token or not target_pid:
@@ -42,7 +74,7 @@ def fetch_quota_language_server():
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
 
-        for port in ports:
+        for port in set(ports):
             try:
                 url = f'https://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary'
                 req = urllib.request.Request(url, data=b'{}', headers={
@@ -59,11 +91,18 @@ def fetch_quota_language_server():
     return None
 
 def fetch_quota_cloud_api():
-    """Antigravity CloudCode API uç noktası üzerinden kota çeker."""
     try:
-        with open('/Users/ugurmac/.gemini/jetski-standalone-oauth-token', 'r') as f:
+        token_path = os.path.expanduser('~/.gemini/jetski-standalone-oauth-token')
+        if not os.path.exists(token_path):
+            return None
+
+        with open(token_path, 'r', encoding='utf-8') as f:
             tok_data = json.load(f)
-        access_token = tok_data['token']['access_token']
+
+        access_token = tok_data.get('token', {}).get('access_token')
+        if not access_token:
+            return None
+
         url = 'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary'
         req = urllib.request.Request(url, data=b'{}', headers={
             'Authorization': f'Bearer {access_token}',
@@ -85,74 +124,20 @@ def get_quota():
         return data, 'Google CloudCode API'
     return None, None
 
-def format_duration(seconds):
-    if seconds <= 0:
-        return "00:00:00 (Sıfırlandı)"
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    if h > 24:
-        days = h // 24
-        rh = h % 24
-        return f"{days} gün {rh} sa {m} dk"
-    return f"{h:02d}:{m:02d}:{s:02d} ({h} sa {m} dk {s} sn)"
-
-def make_bar(fraction, width=20):
-    filled = int(round(fraction * width))
-    bar = "█" * filled + "░" * (width - filled)
-    pct = fraction * 100
-    if pct > 50:
-        color = "\033[92m" # Green
-    elif pct > 20:
-        color = "\033[93m" # Yellow
-    else:
-        color = "\033[91m" # Red
-    reset = "\033[0m"
-    return f"{color}[{bar}] %{pct:.1f}{reset}"
-
 def print_cli():
     data, source = get_quota()
     if not data:
-        print("\033[91m❌ Hata: Antigravity kota bilgisine ulaşılamadı. Antigravity uygulamasının açık olduğundan emin olun.\033[0m")
+        print("\033[91m❌ Hata: Antigravity kota bilgisine ulaşılamadı.\033[0m")
         sys.exit(1)
-
-    now = datetime.now(timezone.utc)
-
-    print("\033[1;36m╔══════════════════════════════════════════════════════════════════════════╗\033[0m")
-    print("\033[1;36m║                  ⚡ ANTIGRAVITY ANLIK KOTA VE LİMİT TAKİBİ               ║\033[0m")
-    print(f"\033[1;36m║                  Kaynak: {source:<48}║\033[0m")
-    print("\033[1;36m╚══════════════════════════════════════════════════════════════════════════╝\033[0m")
-
-    for g in data.get('groups', []):
-        group_name = g.get('displayName', 'Bilinmeyen Grup')
-        desc = g.get('description', '')
-        print(f"\n\033[1;33m▶ {group_name}\033[0m \033[90m({desc})\033[0m")
-        for b in g.get('buckets', []):
-            name = b.get('displayName', 'Havuz')
-            fraction = b.get('remainingFraction', 1.0)
-            reset_str = b.get('resetTime')
-            time_diff_sec = 0
-            if reset_str:
-                try:
-                    dt = datetime.fromisoformat(reset_str.replace('Z', '+00:00'))
-                    time_diff_sec = max(0, (dt - now).total_seconds())
-                except Exception:
-                    pass
-
-            bar_str = make_bar(fraction, width=22)
-            rem_time_str = format_duration(time_diff_sec)
-            print(f"  • \033[1m{name:<28}\033[0m {bar_str}")
-            print(f"    ↳ ⏱️  \033[37mKalan Süre:\033[0m \033[96m{rem_time_str}\033[0m  |  Hedef: \033[90m{reset_str}\033[0m")
-
-    print("\n\033[90m──────────────────────────────────────────────────────────────────────────\033[0m")
-    print(f"\033[90mSon Güncelleme: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (Yerel Saat)\033[0m\n")
+    print(json.dumps({'source': source, 'data': data}, indent=2, ensure_ascii=False))
 
 if __name__ == '__main__':
     if '--json' in sys.argv:
         data, source = get_quota()
         if data:
-            print(json.dumps({'source': source, 'data': data}, indent=2))
+            print(json.dumps({'source': source, 'data': data}, indent=2, ensure_ascii=False))
         else:
             print(json.dumps({'error': 'could not fetch quota'}))
+            sys.exit(1)
     else:
         print_cli()

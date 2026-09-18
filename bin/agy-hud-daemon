@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Antigravity Quota HUD Daemon v4
+Antigravity Quota HUD Daemon v5
 Sohbet giriş kutusunun hemen üzerinde dinamik kapsül şeklinde
 canlı model kotasını, yüzdeleri ve sıfırlanma süresini gösterir.
-Geniş ekranda tek satır; dar ekranda zarifçe iki satıra geçer.
+Üzerine gelindiğinde zengin popover detay kartı açılır.
+Kritik kota seviyelerinde masaüstü bildirimi tetikler.
 """
 
 import asyncio
@@ -25,7 +26,7 @@ def get_cdp_port():
     for p in paths:
         if os.path.exists(p):
             try:
-                with open(p, 'r') as f:
+                with open(p, 'r', encoding='utf-8') as f:
                     return int(f.readline().strip())
             except Exception:
                 pass
@@ -33,21 +34,57 @@ def get_cdp_port():
 
 def get_csrf():
     try:
-        ps_out = subprocess.check_output(['ps', 'aux']).decode('utf-8')
+        ps_out = subprocess.check_output(['ps', 'aux'], stderr=subprocess.DEVNULL).decode('utf-8')
         m_csrf = re.search(r'--csrf_token\s+([a-f0-9\-]+)', ps_out)
         return m_csrf.group(1) if m_csrf else ''
     except Exception:
         return ''
 
+def send_desktop_notification(title, message):
+    """
+    macOS ve Linux üzerinde yerel masaüstü bildirimi gönderir.
+    """
+    if sys.platform == 'darwin':
+        try:
+            subprocess.run(['agy-notify', message, title, 'Glass'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+            return
+        except Exception:
+            pass
+        try:
+            safe_title = title.replace('"', '\\"')
+            safe_msg = message.replace('"', '\\"')
+            script = f'display notification "{safe_msg}" with title "{safe_title}" sound name "Glass"'
+            subprocess.run(['osascript', '-e', script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        except Exception:
+            pass
+    elif sys.platform.startswith('linux'):
+        try:
+            subprocess.run(['notify-send', title, message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        except Exception:
+            pass
+
 HUD_JS_TEMPLATE = """
 (() => {
     const CSRF = __CSRF_TOKEN__;
 
-    // 1. Eski banner ve kalıntıları temizle
+    // 1. Eski sürümlerin ve kalıntıların temizlenmesi
     document.querySelectorAll('#antigravity-quota-hud, #test-quota-banner').forEach(e => e.remove());
 
     let lastPayload = null;
     let targetResetTime = null;
+
+    function formatTimeRemaining(ms) {
+        if (ms <= 0) return '00:00:00';
+        const h = Math.floor(ms / (1000 * 60 * 60));
+        const m = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((ms % (1000 * 60)) / 1000);
+        if (h > 24) {
+            const days = Math.floor(h / 24);
+            const remH = h % 24;
+            return `${days}g ${remH}s ${m}d`;
+        }
+        return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
 
     function ensureBar() {
         const editor = document.querySelector('[contenteditable]');
@@ -56,7 +93,7 @@ HUD_JS_TEMPLATE = """
         if (!inputCard || !inputCard.parentElement) return null;
 
         let bar = document.getElementById('chat-dock-quota-bar');
-        if (bar && (bar.getAttribute('data-v') !== '4' || bar.nextElementSibling !== inputCard)) {
+        if (bar && (bar.getAttribute('data-v') !== '5' || bar.nextElementSibling !== inputCard)) {
             bar.remove();
             bar = null;
         }
@@ -64,8 +101,9 @@ HUD_JS_TEMPLATE = """
         if (!bar) {
             bar = document.createElement('div');
             bar.id = 'chat-dock-quota-bar';
-            bar.setAttribute('data-v', '4');
+            bar.setAttribute('data-v', '5');
             bar.style.cssText = `
+                position: relative;
                 display: flex;
                 flex-wrap: wrap;
                 align-items: center;
@@ -78,7 +116,7 @@ HUD_JS_TEMPLATE = """
                 padding: 4px 12px;
                 min-height: 26px;
                 box-sizing: border-box;
-                background: rgba(24, 24, 27, 0.85);
+                background: rgba(24, 24, 27, 0.88);
                 backdrop-filter: blur(16px);
                 -webkit-backdrop-filter: blur(16px);
                 border: 1px solid rgba(255, 255, 255, 0.08);
@@ -88,18 +126,58 @@ HUD_JS_TEMPLATE = """
                 font-size: 11px;
                 line-height: 1;
                 user-select: none;
-                transition: border-color 0.2s, background 0.2s, border-radius 0.2s;
+                cursor: default;
+                transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
             `;
 
+            // Popover Detay Kartı
+            const popover = document.createElement('div');
+            popover.id = 'dock-quota-popover';
+            popover.style.cssText = `
+                position: absolute;
+                bottom: calc(100% + 8px);
+                left: 50%;
+                transform: translateX(-50%) translateY(4px);
+                background: rgba(18, 18, 22, 0.96);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 12px;
+                padding: 10px 14px;
+                min-width: 290px;
+                box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+                z-index: 999999;
+                font-size: 11px;
+                color: #d4d4d8;
+                text-align: left;
+            `;
+            bar.appendChild(popover);
+
+            let popoverTimer = null;
             bar.addEventListener('mouseenter', () => {
-                bar.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                bar.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+                clearTimeout(popoverTimer);
+                popover.style.opacity = '1';
+                popover.style.pointerEvents = 'auto';
+                popover.style.transform = 'translateX(-50%) translateY(0)';
             });
             bar.addEventListener('mouseleave', () => {
                 bar.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                popoverTimer = setTimeout(() => {
+                    popover.style.opacity = '0';
+                    popover.style.pointerEvents = 'none';
+                    popover.style.transform = 'translateX(-50%) translateY(4px)';
+                }, 100);
             });
 
-            bar.innerHTML = `
+            const contentWrap = document.createElement('div');
+            contentWrap.id = 'dock-quota-content';
+            contentWrap.style.cssText = 'display:flex; flex-wrap:wrap; align-items:center; gap:6px;';
+            contentWrap.innerHTML = `
                 <div id="dock-chunk-primary" style="display:inline-flex; align-items:center; gap:6px; flex-shrink:0; white-space:nowrap; line-height:1;">
                     <span style="font-size:12px; line-height:1; display:inline-flex; align-items:center;">⚡</span>
                     <span style="font-weight:600; color:#94a3b8; line-height:1;">Gemini 5s:</span>
@@ -116,14 +194,15 @@ HUD_JS_TEMPLATE = """
                     <span style="color:#71717a; line-height:1;">Haftalık:</span>
                     <span id="dock-val-weekly" style="font-family:monospace; color:#c084fc; font-weight:600; line-height:1;">--%</span>
                     <span style="color:rgba(255,255,255,0.12); margin:0 1px; line-height:1;">|</span>
-                    <span style="color:#71717a; line-height:1;">Claude:</span>
-                    <span id="dock-val-claude" style="font-family:monospace; color:#34d399; font-weight:600; line-height:1;">--%</span>
-                    <div id="dock-sync-status" title="Canlı otomatik senkronize ediliyor (Tıklayarak da yenileyebilirsiniz)" style="display:inline-flex; align-items:center; gap:4px; cursor:pointer; margin-left:2px;">
+                    <span style="color:#71717a; line-height:1;">Claude/GPT:</span>
+                    <span id="dock-val-claude" style="font-family:monospace; color:#38bdf8; font-weight:600; line-height:1;">--%</span>
+                    <div id="dock-sync-status" title="Otomatik canlı senkronize edilir (Yenilemek için tıklayın)" style="display:inline-flex; align-items:center; gap:4px; cursor:pointer; margin-left:3px;">
                         <span id="dock-sync-dot" style="width:5px; height:5px; border-radius:50%; background:#10b981; display:inline-block; box-shadow:0 0 4px rgba(16,185,129,0.5); transition:background 0.3s, transform 0.3s;"></span>
                         <span id="dock-sync-text" style="color:#71717a; font-size:10px; font-weight:500; line-height:1;">Canlı</span>
                     </div>
                 </div>
             `;
+            bar.appendChild(contentWrap);
 
             inputCard.parentElement.insertBefore(bar, inputCard);
 
@@ -174,10 +253,11 @@ HUD_JS_TEMPLATE = """
             });
             const data = await res.json();
             lastPayload = data.response || data;
+            window.__agy_last_payload = lastPayload;
             renderUI(lastPayload);
             updateTick();
         } catch(e) {
-            console.error('Quota fetch error:', e);
+            console.error('Antigravity Quota fetch error:', e);
         } finally {
             if (dot) {
                 setTimeout(() => {
@@ -192,22 +272,44 @@ HUD_JS_TEMPLATE = """
         let gemini5hPct = '%100';
         let geminiWeeklyPct = '%100';
         let claudePct = '%100';
+        let minRemainingFraction = 1.0;
 
         const groups = payload.groups || [];
+        const popoverItems = [];
+
         groups.forEach(g => {
-            (g.buckets || []).forEach(b => {
-                const pct = (b.remainingFraction * 100).toFixed(1);
-                if (b.bucketId === 'gemini-5h') {
-                    gemini5hPct = '%' + pct;
-                    targetResetTime = new Date(b.resetTime).getTime();
-                } else if (b.bucketId === 'gemini-weekly') {
-                    geminiWeeklyPct = '%' + pct;
-                } else if (b.bucketId === '3p-5h') {
-                    claudePct = '%' + pct;
+            const gName = g.displayName || 'Grup';
+            const buckets = g.buckets || [];
+            buckets.forEach(b => {
+                const frac = (b.remainingFraction !== undefined) ? b.remainingFraction : 1.0;
+                if (frac < minRemainingFraction) minRemainingFraction = frac;
+                const pctNum = (frac * 100).toFixed(1);
+                const bId = (b.bucketId || '').toLowerCase();
+                const bName = b.displayName || bId;
+                const windowStr = b.window || '';
+
+                if (bId === 'gemini-5h' || (bId.includes('5h') && gName.includes('Gemini'))) {
+                    gemini5hPct = '%' + pctNum;
+                    if (b.resetTime) {
+                        targetResetTime = new Date(b.resetTime).getTime();
+                    }
+                } else if (bId === 'gemini-weekly' || (bId.includes('weekly') && gName.includes('Gemini'))) {
+                    geminiWeeklyPct = '%' + pctNum;
+                } else if (bId === '3p-5h' || bId.includes('3p') || gName.toLowerCase().includes('claude')) {
+                    claudePct = '%' + pctNum;
                 }
+
+                popoverItems.push({
+                    group: gName,
+                    name: bName,
+                    pct: pctNum,
+                    fraction: frac,
+                    resetTime: b.resetTime
+                });
             });
         });
 
+        // Ana Kapsül Değerleri
         const dockVal5h = document.getElementById('dock-val-5h');
         const dockFill5h = document.getElementById('dock-fill-5h');
         const dockWeekly = document.getElementById('dock-val-weekly');
@@ -221,6 +323,50 @@ HUD_JS_TEMPLATE = """
         if (dockFill5h) dockFill5h.style.width = gemini5hPct.replace('%','') + '%';
         if (dockWeekly) dockWeekly.innerText = geminiWeeklyPct;
         if (dockClaude) dockClaude.innerText = claudePct;
+
+        // Kritik Seviye Vurgusu
+        const bar = document.getElementById('chat-dock-quota-bar');
+        if (bar) {
+            if (minRemainingFraction <= 0.15) {
+                bar.style.borderColor = 'rgba(248, 113, 113, 0.4)';
+                bar.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.25)';
+            } else {
+                bar.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
+            }
+        }
+
+        // Popover İçeriğini Doldur
+        const popover = document.getElementById('dock-quota-popover');
+        if (popover && popoverItems.length > 0) {
+            let html = `
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:6px;">
+                    <span style="font-weight:700; color:#f4f4f5; display:inline-flex; align-items:center; gap:5px;">⚡ Model Kotaları & Kalan Limitler</span>
+                    <span style="color:#71717a; font-size:10px;">${popoverItems.length} Havuz</span>
+                </div>
+            `;
+            popoverItems.forEach(item => {
+                const color = item.fraction > 0.5 ? '#34d399' : (item.fraction > 0.2 ? '#fbbf24' : '#f87171');
+                const remMs = item.resetTime ? (new Date(item.resetTime).getTime() - Date.now()) : 0;
+                const remStr = formatTimeRemaining(remMs);
+
+                html += `
+                    <div style="margin-bottom:6px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+                            <span style="font-weight:500; color:#a1a1aa;">${item.group} - ${item.name}</span>
+                            <span style="font-weight:700; font-family:monospace; color:${color};">%${item.pct}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <div style="flex:1; height:4px; background:rgba(255,255,255,0.08); border-radius:99px; overflow:hidden;">
+                                <div style="width:${item.pct}%; height:100%; background:${color}; border-radius:99px;"></div>
+                            </div>
+                            <span style="font-size:10px; color:#71717a; font-family:monospace; flex-shrink:0;">⏱️ ${remStr}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            html += `<div style="font-size:9.5px; color:#52525b; text-align:center; margin-top:6px; border-top:1px solid rgba(255,255,255,0.05); padding-top:4px;">Yenilemek için 'Canlı' simgesine tıklayın</div>`;
+            popover.innerHTML = html;
+        }
     }
 
     function updateTick() {
@@ -248,8 +394,8 @@ HUD_JS_TEMPLATE = """
     ensureBar();
     fetchQuotaData();
 
-    if (!window.__agy_quota_v4_setup) {
-        window.__agy_quota_v4_setup = true;
+    if (!window.__agy_quota_v5_setup) {
+        window.__agy_quota_v5_setup = true;
         setInterval(updateTick, 1000);
         setInterval(fetchQuotaData, 10000);
         window.addEventListener('focus', fetchQuotaData);
@@ -277,13 +423,56 @@ async def cdp_eval(ws, expression):
             return msg.get('result', {}).get('result', {}).get('value')
     return None
 
+class QuotaAlertManager:
+    def __init__(self):
+        self.alerted_levels = {}
+
+    def check_and_alert(self, payload):
+        if not payload or not isinstance(payload, dict):
+            return
+        groups = payload.get('groups', [])
+        for g in groups:
+            for b in g.get('buckets', []):
+                b_id = b.get('bucketId', 'default')
+                b_name = b.get('displayName', b_id)
+                frac = b.get('remainingFraction', 1.0)
+                pct = frac * 100.0
+
+                if b_id not in self.alerted_levels:
+                    self.alerted_levels[b_id] = set()
+
+                if pct <= 5.0:
+                    if '5' not in self.alerted_levels[b_id]:
+                        send_desktop_notification(
+                            "🚨 Antigravity Kota Uyarısı (%5)",
+                            f"{b_name} kotanız %{pct:.1f} seviyesine indi! Limit bitmek üzere."
+                        )
+                        self.alerted_levels[b_id].add('5')
+                        self.alerted_levels[b_id].add('15')
+                elif pct <= 15.0:
+                    if '15' not in self.alerted_levels[b_id]:
+                        send_desktop_notification(
+                            "⚠️ Antigravity Kota Uyarısı (%15)",
+                            f"{b_name} kotanız %{pct:.1f} seviyesine geriledi."
+                        )
+                        self.alerted_levels[b_id].add('15')
+                elif pct > 75.0 and len(self.alerted_levels[b_id]) > 0:
+                    # Kota yenilendiğinde bildirim durumunu sıfırla
+                    self.alerted_levels[b_id].clear()
+
 async def run_daemon():
-    print("Starting Antigravity Responsive Quota HUD Daemon v4...", flush=True)
+    print("Starting Antigravity Responsive Quota HUD Daemon v5...", flush=True)
+    alert_mgr = QuotaAlertManager()
+    sleep_interval = 2
+    max_backoff = 25
+    last_alert_check = 0
+
     while True:
         try:
             port = get_cdp_port()
             csrf = get_csrf()
             if port and csrf:
+                sleep_interval = 2  # Antigravity aktif, hızlı döngü
                 code_to_inject = HUD_JS_TEMPLATE.replace('__CSRF_TOKEN__', json.dumps(csrf))
                 req = urllib.request.urlopen(f'http://127.0.0.1:{port}/json', timeout=1.5)
                 pages = json.loads(req.read().decode('utf-8'))
@@ -294,16 +483,27 @@ async def run_daemon():
                     if ws_url:
                         try:
                             async with websockets.connect(ws_url, open_timeout=1.5, close_timeout=1.0) as ws:
-                                check_expr = '!!document.getElementById("chat-dock-quota-bar") && document.getElementById("chat-dock-quota-bar").getAttribute("data-v") === "4" && !document.getElementById("antigravity-quota-hud") && !document.getElementById("test-quota-banner")'
+                                check_expr = '!!document.getElementById("chat-dock-quota-bar") && document.getElementById("chat-dock-quota-bar").getAttribute("data-v") === "5" && !document.getElementById("antigravity-quota-hud") && !document.getElementById("test-quota-banner")'
                                 is_clean = await cdp_eval(ws, check_expr)
                                 if not is_clean:
                                     await cdp_eval(ws, code_to_inject)
-                                    print(f"Updated Quota Bar v4 on: {p.get('title')}", flush=True)
+                                    print(f"Updated Quota Bar v5 on: {p.get('title')}", flush=True)
+
+                                # Masaüstü bildirim kontrolü (her 30 saniyede bir)
+                                if time.time() - last_alert_check > 30:
+                                    payload = await cdp_eval(ws, 'window.__agy_last_payload || null')
+                                    if payload:
+                                        alert_mgr.check_and_alert(payload)
+                                        last_alert_check = time.time()
                         except Exception:
                             pass
+            else:
+                # Antigravity açık değilse CPU ve pil tasarrufu için bekleme süresini katla
+                sleep_interval = min(sleep_interval + 5, max_backoff)
         except Exception:
-            pass
-        await asyncio.sleep(2)
+            sleep_interval = min(sleep_interval + 5, max_backoff)
+
+        await asyncio.sleep(sleep_interval)
 
 if __name__ == '__main__':
     asyncio.run(run_daemon())

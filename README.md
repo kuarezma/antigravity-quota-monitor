@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/kuarezma/antigravity-quota-monitor/stargazers"><img src="https://img.shields.io/github/stars/kuarezma/antigravity-quota-monitor?style=for-the-badge&color=f59e0b&label=Stars%20%E2%AD%90" alt="Stars" /></a>
+  <a href="https://github.com/kuarezma/antigravity-quota-monitor/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/kuarezma/antigravity-quota-monitor/ci.yml?branch=main&style=for-the-badge&label=CI%20Tests" alt="CI Status" /></a>
   <a href="https://github.com/kuarezma/antigravity-quota-monitor/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT%20%28Starware%29-38bdf8?style=for-the-badge" alt="License" /></a>
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-10b981?style=for-the-badge" alt="Platform" />
   <img src="https://img.shields.io/badge/Antigravity-v2.x-8b5cf6?style=for-the-badge" alt="Antigravity Version" />
@@ -20,13 +21,16 @@
 ## 🌟 Özellikler
 
 - ⏱️ **Canlı Saniye Saniye Geri Sayım:** Limitlerin tam olarak sıfırlanacağı zamana kalan süreyi dinamik olarak geri sayar.
-- 🎨 **Doğal Koyu Tema Uyumlu:** Antigravity'nin yerel sohbet kartı tasarımıyla (`rgba(24, 24, 27, 0.82)`) pürüzsüzce bütünleşir; göz yormayan, zarif bir kenarlığa sahiptir.
-- 🔄 **Tam Otomatik Senkronizasyon (`● Canlı`):** Her 10 saniyede bir ve pencereye her odaklanıldığında limitleri arka planda sessizce günceller (yerel RPC sorgusuyla sıfır gecikme).
-- 📏 **Yatay Tek Satır & Dinamik Kapsül:** İki satıra bölünmeyen, içeriğe ve pencereye göre akıllıca genişleyip daralan zarif tek satır kapsül tasarımı. Mesajların üzerine binmez, sohbet akışıyla tam entegre çalışır.
-- 📌 **Sohbet Giriş Kutusuyla Bütünleşik:** Doğrudan prompt giriş kartının (`Ask anything...`) hemen üstünde yer alır; pencere boyutu değiştiğinde veya kenar çubuğu açılıp kapandığında merkezini ve uyumunu otomatik korur.
-- 💻 **Güçlü Terminal Arayüzü (`agy-quota`):** Terminal üzerinden renkli ANSI ilerleme çubuklarıyla detaylı kota analizi.
+- 🎨 **Doğal Koyu Tema Uyumlu:** Antigravity'nin yerel sohbet kartı tasarımıyla (`rgba(24, 24, 27, 0.88)`) pürüzsüzce bütünleşir; göz yormayan, zarif bir kenarlığa sahiptir.
+- 💬 **Zengin Popover Hover Kartı:** Sohbetin üstündeki kapsülün üzerine fareyle gelindiğinde tüm model havuzlarının (Gemini Flash/Pro, Claude 3.5 Sonnet, Opus, GPT-OSS) ayrıntılı yüzdelerini, ilerleme çubuklarını ve sayaçlarını gösteren şık bir detay penceresi açılır.
+- 🔔 **Akıllı Masaüstü Bildirimleri (Alerter):** Kota kritik seviyeye indiğinde (%15 ve %5) veya kota sıfırlandığında yerel sistem bildirimi (macOS bildirim & ses, Linux `notify-send`) gönderir.
+- 🔄 **Tam Otomatik Senkronizasyon (`● Canlı`):** Her 10 saniyede bir ve pencereye her odaklanıldığında limitleri arka planda sessizce günceller (yerel RPC sorgusuyla sıfır gecikme). İstenildiğinde simgeye tıklanarak anında yenilenebilir.
+- 🛡️ **Akıllı Kaynak Tasarrufu (Backoff):** Antigravity kapalıyken döngü uyku süresini otomatik kademelendirir; sıfır CPU ve pil tüketimi sağlar.
+- 📏 **Dinamik Duyarlı Kapsül:** İki satıra bölünmeyen, içeriğe ve pencereye göre akıllıca genişleyip daralan zarif tek satır kapsül tasarımı. Mesajların üzerine binmez, sohbet akışıyla tam entegre çalışır.
+- 💻 **Güçlü Terminal Arayüzü (`agy-quota`):** Terminal üzerinden renkli ANSI ilerleme çubuklarıyla detaylı kota analizi ve betikler için `--json` çıktısı.
 - 💬 **Sohbet İçi Asistan Becerisi (`/quota`):** Antigravity içinde asistana doğrudan `/quota` yazarak limitlerinizi sorabilirsiniz.
-- 🚀 **Otomatik Arka Plan Servisi (LaunchAgent):** Bilgisayar açıldığında veya Antigravity başlatıldığında otomatik devreye girer; hiçbir şey çalıştırmanıza gerek kalmaz.
+- 🚀 **Otomatik Arka Plan Servisi (LaunchAgent & systemd):** Bilgisayar açıldığında veya Antigravity başlatıldığında otomatik devreye girer (macOS için `LaunchAgent`, Linux için `systemd --user`).
+- 🧪 **Uçtan Uca Test Edilmiş:** Kapsamlı `pytest` paketi ve GitHub Actions CI ile tüm işletim sistemlerinde güvenli.
 
 ---
 
@@ -44,13 +48,17 @@
 ║                  Kaynak: Yerel LanguageServer                            ║
 ╚══════════════════════════════════════════════════════════════════════════╝
 
-▶ Gemini Models (Gemini Flash / Gemini Pro)
-  • 5-Saatlik Limit:  [███████████████████░░░] %87.4  ⏱️ Kalan: 01:09:48
-  • Haftalık Limit:   [████████████████████░░] %91.1  ⏱️ Kalan: 5 gün 21 sa
+▶ Gemini Models (Models within this group: Gemini Flash, Gemini Pro)
+  • Weekly Limit Remaining       [████████████████████░░] %89.8
+    ↳ ⏱️  Kalan Süre: 5 gün 20 sa 27 dk  |  Hedef: 2026-09-24T18:48:53Z
+  • Five Hour Limit Remaining    [██████████════════════] %99.0
+    ↳ ⏱️  Kalan Süre: 04:51:46 (4 sa 51 dk 46 sn)  |  Hedef: 2026-09-19T03:12:45Z
 
-▶ Claude and GPT models (Claude Opus, Sonnet, GPT)
-  • 5-Saatlik Limit:  [██████████████████████] %100.0 ⏱️ Kalan: 04:58:10
-  • Haftalık Limit:   [██████████████████████] %100.0 ⏱️ Kalan: 6 gün 23 sa
+▶ Claude and GPT models (Models within this group: Claude Opus, Claude Sonnet, GPT-OSS)
+  • Weekly Limit Remaining       [██████████████████████] %100.0
+    ↳ ⏱️  Kalan Süre: 6 gün 23 sa 58 dk  |  Hedef: 2026-09-25T22:19:48Z
+  • Five Hour Limit Remaining    [██████████████████████] %100.0
+    ↳ ⏱️  Kalan Süre: 04:58:49 (4 sa 58 dk 49 sn)  |  Hedef: 2026-09-19T03:19:48Z
 ```
 
 ---
@@ -75,7 +83,7 @@ curl -fsSL https://raw.githubusercontent.com/kuarezma/antigravity-quota-monitor/
 ┌─────────────────────────────────────────────────────────┐
 │              Antigravity Desktop Application            │
 │  ┌───────────────────────────────────────────────────┐  │
-│  │   ⚡ Gemini 5s: %88 | ⏱️ 01:14:59 | Haftalık: %91  │  │ ◄─── Injected HUD Bar
+│  │   ⚡ Gemini 5s: %88 | ⏱️ 01:14:59 | Haftalık: %91  │  │ ◄─── Injected HUD Bar & Hover Popover
 │  └───────────────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────────────┐  │
 │  │  Ask anything, @ to mention, / for actions...     │  │
@@ -85,7 +93,8 @@ curl -fsSL https://raw.githubusercontent.com/kuarezma/antigravity-quota-monitor/
 ┌────────────────────────────▼────────────────────────────┐
 │         agy-hud-daemon (Arka Plan Servisi)              │
 │  • DevToolsActivePort üzerinden Electron sayfasına bağlı│
-│  • DOM enjeksiyonu ve 10s sessiz senkronizasyon         │
+│  • DOM enjeksiyonu, zengin hover kartı & uyarıcı        │
+│  • Akıllı backoff ile sıfır kaynak tüketimi             │
 └────────────────────────────┬────────────────────────────┘
                              │ Local HTTPS RPC
 ┌────────────────────────────▼────────────────────────────┐
@@ -96,7 +105,18 @@ curl -fsSL https://raw.githubusercontent.com/kuarezma/antigravity-quota-monitor/
 
 1. **Dinamik Port Tespiti:** Electron'un rastgele açtığı CDP portu `DevToolsActivePort` dosyasından dinamik okunur.
 2. **CSRF Korumalı RPC:** Antigravity LanguageServer motoruna yerel HTTPS RPC çağrısı (`RetrieveUserQuotaSummary`) yapılarak resmi kotalar doğrudan çekilir.
-3. **Akıllı Enjeksiyon:** Kullanıcı mesaj yazarken veya ekranı kaydırırken performans kaybı yaşanmaması için CSS fixed docking kullanılır.
+3. **Zengin Popover & Akıllı Alerter:** Fareyle üzerine gelindiğinde tüm havuzlar açılır; kota kritik seviyelere indiğinde sistem bildirimi gönderilir.
+
+---
+
+## 🧪 Testleri Çalıştırma
+
+Projeyi klonladıktan sonra testleri yerel ortamınızda çalıştırabilirsiniz:
+
+```bash
+pip install websockets pytest
+pytest tests/ -v
+```
 
 ---
 
@@ -107,11 +127,11 @@ Eğer eklentiyi ve arka plan servisini sistemden tamamen kaldırmak isterseniz:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kuarezma/antigravity-quota-monitor/main/install.sh | bash -s -- --uninstall
 ```
-veya yerel olarak:
+veya yerel depodan:
 ```bash
 bash install.sh --uninstall
 ```
-Tüm servisler durdurulur ve dosyalar arkasında iz bırakmadan silinir.
+Tüm servisler (macOS LaunchAgent veya Linux systemd) durdurulur ve dosyalar sistemden temizlenir.
 
 ---
 
