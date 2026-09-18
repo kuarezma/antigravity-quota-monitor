@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Antigravity Quota Monitor CLI (agy-quota)
-Anlık model kotası, kalan yüzdeler ve sıfırlanma süresi takipçisi.
+Anlık model kotası, kalan yüzdeler, sıfırlanma süresi ve tüketim hızı takipçisi.
 Desteklenen platformlar: macOS, Linux.
 """
 
@@ -15,15 +15,65 @@ import urllib.request
 import ssl
 from datetime import datetime, timezone
 
+HISTORY_FILE = os.path.expanduser('~/.cache/antigravity-quota/history.json')
+
+MESSAGES = {
+    'tr': {
+        'title': '⚡ ANTIGRAVITY ANLIK KOTA VE LİMİT TAKİBİ',
+        'source': 'Kaynak',
+        'remaining_time': 'Kalan Süre',
+        'target': 'Hedef',
+        'last_update': 'Son Güncelleme',
+        'local_time': 'Yerel Saat',
+        'error_fetch': '❌ Hata: Antigravity kota bilgisine ulaşılamadı. Antigravity uygulamasının açık olduğundan emin olun.',
+        'reset_done': '00:00:00 (Sıfırlandı)',
+        'days': 'gün',
+        'hours': 'sa',
+        'mins': 'dk',
+        'secs': 'sn',
+        'burn_active': '🔥 Tüketim Hızı: %{rate:.1f}/saat | Tahmini Tükenme: ~{time}',
+        'burn_idle': '💤 Tüketim Yok (Beklemede)',
+        'burn_section': 'Tüketim Hızı Analizi (Burn-rate)',
+        'unknown_group': 'Bilinmeyen Grup',
+        'bucket_default': 'Havuz'
+    },
+    'en': {
+        'title': '⚡ ANTIGRAVITY REAL-TIME QUOTA & LIMIT MONITOR',
+        'source': 'Source',
+        'remaining_time': 'Time Remaining',
+        'target': 'Target',
+        'last_update': 'Last Updated',
+        'local_time': 'Local Time',
+        'error_fetch': '❌ Error: Could not fetch Antigravity quota. Ensure Antigravity is running.',
+        'reset_done': '00:00:00 (Refreshed)',
+        'days': 'days',
+        'hours': 'h',
+        'mins': 'm',
+        'secs': 's',
+        'burn_active': '🔥 Burn Rate: {rate:.1f}%/hr | Estimated Depletion: ~{time}',
+        'burn_idle': '💤 Idle (No recent usage)',
+        'burn_section': 'Burn-Rate Analysis',
+        'unknown_group': 'Unknown Group',
+        'bucket_default': 'Bucket'
+    }
+}
+
+def get_active_lang():
+    if '--lang' in sys.argv:
+        idx = sys.argv.index('--lang')
+        if idx + 1 < len(sys.argv) and sys.argv[idx + 1].lower() in ['en', 'tr']:
+            return sys.argv[idx + 1].lower()
+    env_lang = os.environ.get('AGY_LANG', os.environ.get('LANG', 'tr')).lower()
+    return 'en' if env_lang.startswith('en') else 'tr'
+
 def get_listening_ports(target_pid):
     """
-    Belirtilen PID için dinlenen (LISTEN) yerel portları döner.
-    macOS (lsof) ve Linux (ss, /proc) ortamlarında tam uyumlu çalışır.
+    Belirtilen PID için dinlenen yerel portları döner (macOS lsof / Linux ss).
     """
     ports = []
     pid_str = str(target_pid)
 
-    # 1. macOS & Linux: lsof denemesi
+    # 1. macOS & Linux: lsof
     try:
         lsof_out = subprocess.check_output(
             ['lsof', '-n', '-P', '-p', pid_str],
@@ -39,7 +89,7 @@ def get_listening_ports(target_pid):
     except Exception:
         pass
 
-    # 2. Linux: ss -tlpn denemesi (lsof yüklü olmadığında)
+    # 2. Linux: ss -tlpn
     try:
         ss_out = subprocess.check_output(['ss', '-tlpn'], stderr=subprocess.DEVNULL).decode('utf-8')
         for line in ss_out.splitlines():
@@ -56,7 +106,7 @@ def get_listening_ports(target_pid):
 
 def fetch_quota_language_server():
     """
-    Antigravity yerel LanguageServer RPC üzerinden anlık kota bilgisini çeker.
+    Antigravity yerel LanguageServer RPC üzerinden anlık kota çeker.
     """
     try:
         ps_out = subprocess.check_output(['ps', 'aux'], stderr=subprocess.DEVNULL).decode('utf-8')
@@ -101,7 +151,7 @@ def fetch_quota_language_server():
 
 def fetch_quota_cloud_api():
     """
-    Antigravity CloudCode API uç noktası üzerinden yedek (fallback) kota çeker.
+    Antigravity CloudCode API uç noktası üzerinden yedek kota çeker.
     """
     try:
         token_path = os.path.expanduser('~/.gemini/jetski-standalone-oauth-token')
@@ -127,37 +177,105 @@ def fetch_quota_cloud_api():
         pass
     return None
 
+def load_history():
+    try:
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {'buckets': {}}
+
+def record_history(data):
+    if not data or not isinstance(data, dict):
+        return
+    history = load_history()
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    buckets_hist = history.setdefault('buckets', {})
+
+    for g in data.get('groups', []):
+        for b in g.get('buckets', []):
+            b_id = b.get('bucketId', 'default')
+            frac = b.get('remainingFraction', 1.0)
+            lst = buckets_hist.setdefault(b_id, [])
+            lst.append({'ts': now_ts, 'fraction': frac})
+            if len(lst) > 50:
+                buckets_hist[b_id] = lst[-50:]
+
+    try:
+        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(history, f, indent=2)
+    except Exception:
+        pass
+
+def calculate_burn_rate(bucket_id, current_fraction, history=None):
+    """
+    Zaman serisi geçmişini kullanarak anlık saatlik tüketim hızını ve kalan süreyi hesaplar.
+    """
+    if history is None:
+        history = load_history()
+    records = history.get('buckets', {}).get(bucket_id, [])
+    if len(records) < 2:
+        return {'status': 'idle', 'rate_per_hour': 0.0, 'minutes_left': None}
+
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    recent = [r for r in records if now_ts - r.get('ts', 0) <= 10800] # Son 3 saat
+    if len(recent) < 2:
+        return {'status': 'idle', 'rate_per_hour': 0.0, 'minutes_left': None}
+
+    oldest = recent[0]
+    delta_time_hours = (now_ts - oldest['ts']) / 3600.0
+    if delta_time_hours < (15 / 3600.0): # 15 saniyeden az veri
+        return {'status': 'idle', 'rate_per_hour': 0.0, 'minutes_left': None}
+
+    delta_fraction = oldest['fraction'] - current_fraction
+    if delta_fraction >= 0.002:
+        rate_per_hour = (delta_fraction * 100.0) / delta_time_hours
+        hours_left = current_fraction / (delta_fraction / delta_time_hours) if delta_fraction > 0 else 999
+        minutes_left = int(hours_left * 60)
+        return {
+            'status': 'active',
+            'rate_per_hour': round(rate_per_hour, 1),
+            'minutes_left': max(1, minutes_left)
+        }
+    return {'status': 'idle', 'rate_per_hour': 0.0, 'minutes_left': None}
+
 def get_quota():
-    """
-    Kota özetini sırasıyla yerel LanguageServer ve CloudCode API üzerinden sorgular.
-    """
     data = fetch_quota_language_server()
     if data:
+        record_history(data)
         return data, 'Yerel LanguageServer'
     data = fetch_quota_cloud_api()
     if data:
+        record_history(data)
         return data, 'Google CloudCode API'
     return None, None
 
-def format_duration(seconds):
-    """
-    Saniyeyi gün, saat, dakika ve saniye olarak okunabilir Türkçe metne dönüştürür.
-    """
+def format_duration(seconds, lang='tr'):
+    msg = MESSAGES[lang]
     if seconds <= 0:
-        return "00:00:00 (Sıfırlandı)"
+        return msg['reset_done']
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
     if h > 24:
         days = h // 24
         rh = h % 24
-        return f"{days} gün {rh} sa {m} dk"
-    return f"{h:02d}:{m:02d}:{s:02d} ({h} sa {m} dk {s} sn)"
+        return f"{days} {msg['days']} {rh} {msg['hours']} {m} {msg['mins']}"
+    return f"{h:02d}:{m:02d}:{s:02d} ({h} {msg['hours']} {m} {msg['mins']} {s} {msg['secs']})"
+
+def format_minutes_left(minutes, lang='tr'):
+    msg = MESSAGES[lang]
+    if minutes is None:
+        return ""
+    if minutes < 60:
+        return f"{minutes} {msg['mins']}"
+    h = minutes // 60
+    rm = minutes % 60
+    return f"{h} {msg['hours']} {rm} {msg['mins']}"
 
 def make_bar(fraction, width=22):
-    """
-    Kalan kota oranına göre renkli ANSI ilerleme çubuğu üretir.
-    """
     fraction = max(0.0, min(1.0, float(fraction)))
     filled = int(round(fraction * width))
     bar = "█" * filled + "░" * (width - filled)
@@ -171,25 +289,32 @@ def make_bar(fraction, width=22):
     reset = "\033[0m"
     return f"{color}[{bar}] %{pct:.1f}{reset}"
 
-def print_cli():
+def print_cli(lang=None, show_burn_rate=False):
+    if lang is None:
+        lang = get_active_lang()
+    msg = MESSAGES[lang]
+
     data, source = get_quota()
     if not data:
-        print("\033[91m❌ Hata: Antigravity kota bilgisine ulaşılamadı. Antigravity uygulamasının açık olduğundan emin olun.\033[0m")
+        print(f"\033[91m{msg['error_fetch']}\033[0m")
         sys.exit(1)
 
     now = datetime.now(timezone.utc)
     print("\033[1;36m╔══════════════════════════════════════════════════════════════════════════╗\033[0m")
-    print("\033[1;36m║                  ⚡ ANTIGRAVITY ANLIK KOTA VE LİMİT TAKİBİ               ║\033[0m")
-    print(f"\033[1;36m║                  Kaynak: {source:<48}║\033[0m")
+    print(f"\033[1;36m║                  {msg['title']:<56}║\033[0m")
+    source_label = f"{msg['source']}: {source}"
+    print(f"\033[1;36m║                  {source_label:<56}║\033[0m")
     print("\033[1;36m╚══════════════════════════════════════════════════════════════════════════╝\033[0m")
 
+    history = load_history()
     groups = data.get('groups', [])
     for g in groups:
-        group_name = g.get('displayName', 'Bilinmeyen Grup')
+        group_name = g.get('displayName', msg['unknown_group'])
         desc = g.get('description', '')
         print(f"\n\033[1;33m▶ {group_name}\033[0m \033[90m({desc})\033[0m")
         for b in g.get('buckets', []):
-            name = b.get('displayName', 'Havuz')
+            b_id = b.get('bucketId', 'default')
+            name = b.get('displayName', msg['bucket_default'])
             fraction = b.get('remainingFraction', 1.0)
             reset_str = b.get('resetTime')
             time_diff_sec = 0
@@ -201,20 +326,42 @@ def print_cli():
                     pass
 
             bar_str = make_bar(fraction, width=22)
-            rem_time_str = format_duration(time_diff_sec)
+            rem_time_str = format_duration(time_diff_sec, lang=lang)
             print(f"  • \033[1m{name:<28}\033[0m {bar_str}")
-            print(f"    ↳ ⏱️  \033[37mKalan Süre:\033[0m \033[96m{rem_time_str}\033[0m  |  Hedef: \033[90m{reset_str}\033[0m")
+            print(f"    ↳ ⏱️  \033[37m{msg['remaining_time']}:\033[0m \033[96m{rem_time_str}\033[0m  |  {msg['target']}: \033[90m{reset_str}\033[0m")
+
+            # Tüketim hızı (burn-rate)
+            burn = calculate_burn_rate(b_id, fraction, history)
+            if burn['status'] == 'active':
+                time_str = format_minutes_left(burn['minutes_left'], lang=lang)
+                burn_text = msg['burn_active'].format(rate=burn['rate_per_hour'], time=time_str)
+                print(f"    ↳ \033[93m{burn_text}\033[0m")
+            elif show_burn_rate:
+                print(f"    ↳ \033[90m{msg['burn_idle']}\033[0m")
 
     print("\n\033[90m──────────────────────────────────────────────────────────────────────────\033[0m")
-    print(f"\033[90mSon Güncelleme: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (Yerel Saat)\033[0m\n")
+    print(f"\033[90m{msg['last_update']}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ({msg['local_time']})\033[0m\n")
 
 if __name__ == '__main__':
+    active_lang = get_active_lang()
+    show_burn = '--burn-rate' in sys.argv
+
     if '--json' in sys.argv:
         data, source = get_quota()
         if data:
-            print(json.dumps({'source': source, 'data': data}, indent=2, ensure_ascii=False))
+            history = load_history()
+            burn_info = {}
+            for g in data.get('groups', []):
+                for b in g.get('buckets', []):
+                    b_id = b.get('bucketId', 'default')
+                    burn_info[b_id] = calculate_burn_rate(b_id, b.get('remainingFraction', 1.0), history)
+            print(json.dumps({
+                'source': source,
+                'data': data,
+                'burn_rate': burn_info
+            }, indent=2, ensure_ascii=False))
         else:
             print(json.dumps({'error': 'could not fetch quota'}))
             sys.exit(1)
     else:
-        print_cli()
+        print_cli(lang=active_lang, show_burn_rate=show_burn)

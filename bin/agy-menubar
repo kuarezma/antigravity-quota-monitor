@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# ==============================================================================
+#  ⚡ Antigravity macOS Menubar Başlatıcı
+# ==============================================================================
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+SWIFT_SOURCE="$SCRIPT_DIR/agy-menubar.swift"
+BIN_DIR="$HOME/.local/bin"
+TARGET_BIN="$BIN_DIR/agy-menubar-bin"
+
+mkdir -p "$BIN_DIR"
+
+if [ ! -f "$SWIFT_SOURCE" ]; then
+    # Eğer kaynak dosya kurulu dizindeyse
+    SWIFT_SOURCE="$BIN_DIR/agy-menubar.swift"
+fi
+
+# Derleme: Kaynak dosya binary'den yeniyse veya binary yoksa
+if [ ! -f "$TARGET_BIN" ] || ( [ -f "$SWIFT_SOURCE" ] && [ "$SWIFT_SOURCE" -nt "$TARGET_BIN" ] ); then
+    if command -v swiftc &>/dev/null && [ -f "$SWIFT_SOURCE" ]; then
+        echo "⚡ agy-menubar derleniyor (Swift)..."
+        swiftc -O -o "$TARGET_BIN" "$SWIFT_SOURCE"
+    else
+        echo "❌ Hata: 'swiftc' derleyicisi veya '$SWIFT_SOURCE' bulunamadı."
+        exit 1
+    fi
+fi
+
+if [ "$1" == "--daemon" ] || [ "$1" == "-d" ]; then
+    # Zaten çalışıyorsa tekrar başlatma
+    if pgrep -f "agy-menubar-bin" > /dev/null; then
+        echo "✓ agy-menubar zaten arka planda çalışıyor."
+        exit 0
+    fi
+    nohup "$TARGET_BIN" >/dev/null 2>&1 &
+    echo "✓ agy-menubar arka planda başlatıldı."
+else
+    exec "$TARGET_BIN"
+fi

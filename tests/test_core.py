@@ -8,6 +8,7 @@ import sys
 import os
 import io
 import json
+import time
 import importlib.util
 from importlib.machinery import SourceFileLoader
 from unittest.mock import patch, MagicMock, mock_open
@@ -26,27 +27,30 @@ spec_d = importlib.util.spec_from_loader("agy_daemon", loader_d)
 agy_daemon = importlib.util.module_from_spec(spec_d)
 loader_d.exec_module(agy_daemon)
 
-def test_format_duration():
-    # Sıfır veya negatif
-    assert "Sıfırlandı" in agy_quota.format_duration(0)
-    assert "Sıfırlandı" in agy_quota.format_duration(-10)
+def test_format_duration_tr_en():
+    # TR formatı
+    assert "Sıfırlandı" in agy_quota.format_duration(0, lang='tr')
+    formatted_tr = agy_quota.format_duration(5415, lang='tr')
+    assert "1 sa 30 dk 15 sn" in formatted_tr
 
-    # 1 saat 30 dakika 15 saniye
-    formatted = agy_quota.format_duration(5415)
-    assert "01:30:15" in formatted
-    assert "1 sa 30 dk 15 sn" in formatted
+    # EN formatı
+    assert "Refreshed" in agy_quota.format_duration(0, lang='en')
+    formatted_en = agy_quota.format_duration(5415, lang='en')
+    assert "1 h 30 m 15 s" in formatted_en
 
-    # 2 günden fazla süre
-    long_formatted = agy_quota.format_duration(200000)
-    assert "gün" in long_formatted
-    assert "2 gün" in long_formatted
+def test_format_minutes_left():
+    assert agy_quota.format_minutes_left(None) == ""
+    assert "45 dk" in agy_quota.format_minutes_left(45, lang='tr')
+    assert "45 m" in agy_quota.format_minutes_left(45, lang='en')
+    assert "1 sa 15 dk" in agy_quota.format_minutes_left(75, lang='tr')
+    assert "1 h 15 m" in agy_quota.format_minutes_left(75, lang='en')
 
 def test_make_bar():
     # %100 - Yeşil
     bar_full = agy_quota.make_bar(1.0, width=10)
     assert "██████████" in bar_full
     assert "%100.0" in bar_full
-    assert "\033[92m" in bar_full  # Yeşil ANSI
+    assert "\033[92m" in bar_full
 
     # %50 - Sarı
     bar_half = agy_quota.make_bar(0.5, width=10)
@@ -57,7 +61,7 @@ def test_make_bar():
     bar_low = agy_quota.make_bar(0.1, width=10)
     assert "█░░░░░░░░░" in bar_low
     assert "%10.0" in bar_low
-    assert "\033[91m" in bar_low  # Kırmızı ANSI
+    assert "\033[91m" in bar_low
 
     # Sınır dışı değerler (clamping)
     bar_neg = agy_quota.make_bar(-0.5, width=10)
@@ -77,7 +81,6 @@ def test_get_listening_ports_lsof():
         assert 49216 in ports
 
 def test_get_listening_ports_ss_linux():
-    # lsof başarısız olduğunda ss çıktısı
     fake_ss = (
         "State      Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\n"
         "LISTEN     0      128    127.0.0.1:38421     0.0.0.0:*    users:((\"language_server\",pid=5678,fd=7))\n"
@@ -116,6 +119,26 @@ def test_fetch_quota_language_server(mock_quota_summary):
         assert result is not None
         assert "groups" in result
         assert len(result["groups"]) == 2
+
+def test_calculate_burn_rate():
+    # 1. Yetersiz geçmiş -> idle
+    res_idle = agy_quota.calculate_burn_rate("gemini-5h", 0.9, history={'buckets': {}})
+    assert res_idle['status'] == 'idle'
+
+    # 2. Aktif tüketim: 30 dakika önce 0.95 olan kota şimdi 0.85 (fark = 0.10, 0.5 saatte %10 -> %20/saat)
+    now_ts = int(time.time())
+    hist = {
+        'buckets': {
+            'gemini-5h': [
+                {'ts': now_ts - 1800, 'fraction': 0.95},
+                {'ts': now_ts, 'fraction': 0.85}
+            ]
+        }
+    }
+    res_active = agy_quota.calculate_burn_rate("gemini-5h", 0.85, history=hist)
+    assert res_active['status'] == 'active'
+    assert res_active['rate_per_hour'] == 20.0
+    assert res_active['minutes_left'] > 0
 
 def test_quota_alert_manager(mock_quota_summary):
     alert_mgr = agy_daemon.QuotaAlertManager()

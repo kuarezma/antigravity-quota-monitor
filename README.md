@@ -24,13 +24,16 @@
 - 🎨 **Doğal Koyu Tema Uyumlu:** Antigravity'nin yerel sohbet kartı tasarımıyla (`rgba(24, 24, 27, 0.88)`) pürüzsüzce bütünleşir; göz yormayan, zarif bir kenarlığa sahiptir.
 - 💬 **Zengin Popover Hover Kartı:** Sohbetin üstündeki kapsülün üzerine fareyle gelindiğinde tüm model havuzlarının (Gemini Flash/Pro, Claude 3.5 Sonnet, Opus, GPT-OSS) ayrıntılı yüzdelerini, ilerleme çubuklarını ve sayaçlarını gösteren şık bir detay penceresi açılır.
 - 🔔 **Akıllı Masaüstü Bildirimleri (Alerter):** Kota kritik seviyeye indiğinde (%15 ve %5) veya kota sıfırlandığında yerel sistem bildirimi (macOS bildirim & ses, Linux `notify-send`) gönderir.
-- 🔄 **Tam Otomatik Senkronizasyon (`● Canlı`):** Her 10 saniyede bir ve pencereye her odaklanıldığında limitleri arka planda sessizce günceller (yerel RPC sorgusuyla sıfır gecikme). İstenildiğinde simgeye tıklanarak anında yenilenebilir.
-- 🛡️ **Akıllı Kaynak Tasarrufu (Backoff):** Antigravity kapalıyken döngü uyku süresini otomatik kademelendirir; sıfır CPU ve pil tüketimi sağlar.
-- 📏 **Dinamik Duyarlı Kapsül:** İki satıra bölünmeyen, içeriğe ve pencereye göre akıllıca genişleyip daralan zarif tek satır kapsül tasarımı. Mesajların üzerine binmez, sohbet akışıyla tam entegre çalışır.
-- 💻 **Güçlü Terminal Arayüzü (`agy-quota`):** Terminal üzerinden renkli ANSI ilerleme çubuklarıyla detaylı kota analizi ve betikler için `--json` çıktısı.
+- 🔥 **Tüketim Hızı ve Tükenme Tahmini (Burn-Rate):** Zaman serisi analizi ile *"Bu hızla kotanız ~38 dakika içinde tükenecektir"* şeklinde akıllı tahmin sunar (`agy-quota --burn-rate`).
+- 🍏 **macOS Menü Çubuğu (Menubar Status Bar):** Antigravity simge durumundayken dahi menü çubuğunda anlık kota ve geri sayımı gösteren yerel Swift menubar aracı (`agy-menubar --daemon`).
+- 🌐 **Çoklu Dil Desteği (i18n):** Türkçe ve İngilizce arayüz desteği (`agy-quota --lang en` / `--lang tr`).
+- 🔄 **Tam Otomatik Senkronizasyon (`● Canlı`):** Her 10 saniyede bir ve pencereye her odaklanıldığında limitleri arka planda sessizce günceller.
+- 🛡️ **Akıllı Kaynak Tasarrufu (Backoff):** Antigravity kapalıyken döngü süresini kademelendirir; sıfır CPU ve pil tüketimi sağlar.
+- 💻 **Güçlü Terminal Arayüzü (`agy-quota`):** Renkli ANSI ilerleme barları ve betikler için `--json` desteği.
 - 💬 **Sohbet İçi Asistan Becerisi (`/quota`):** Antigravity içinde asistana doğrudan `/quota` yazarak limitlerinizi sorabilirsiniz.
-- 🚀 **Otomatik Arka Plan Servisi (LaunchAgent & systemd):** Bilgisayar açıldığında veya Antigravity başlatıldığında otomatik devreye girer (macOS için `LaunchAgent`, Linux için `systemd --user`).
-- 🧪 **Uçtan Uca Test Edilmiş:** Kapsamlı `pytest` paketi ve GitHub Actions CI ile tüm işletim sistemlerinde güvenli.
+- 🚀 **Otomatik Arka Plan Servisi (LaunchAgent & systemd):** macOS için `LaunchAgent`, Linux için `systemd --user` ile tek tık kurulum.
+- 🍺 **Homebrew Formülü:** `Formula/antigravity-quota-monitor.rb` ile paket yöneticisi uyumluluğu.
+- 🧪 **Uçtan Uca Test Edilmiş:** Kapsamlı `pytest` paketi ve GitHub Actions CI ile tam güvence.
 
 ---
 
@@ -41,7 +44,7 @@
   <img src="assets/chat-preview.png" alt="Antigravity Chat Window" width="850" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);" />
 </p>
 
-### 2. Terminal Görünümü (`agy-quota`)
+### 2. Terminal Görünümü (`agy-quota --burn-rate`)
 ```
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║                  ⚡ ANTIGRAVITY ANLIK KOTA VE LİMİT TAKİBİ               ║
@@ -49,35 +52,53 @@
 ╚══════════════════════════════════════════════════════════════════════════╝
 
 ▶ Gemini Models (Models within this group: Gemini Flash, Gemini Pro)
-  • Weekly Limit Remaining       [████████████████████░░] %89.8
-    ↳ ⏱️  Kalan Süre: 5 gün 20 sa 27 dk  |  Hedef: 2026-09-24T18:48:53Z
-  • Five Hour Limit Remaining    [██████████════════════] %99.0
-    ↳ ⏱️  Kalan Süre: 04:51:46 (4 sa 51 dk 46 sn)  |  Hedef: 2026-09-19T03:12:45Z
+  • Weekly Limit Remaining       [████████████████████░░] %89.5
+    ↳ ⏱️  Kalan Süre: 5 gün 20 sa 23 dk  |  Hedef: 2026-09-24T18:48:53Z
+    ↳ 💤 Tüketim Yok (Beklemede)
+  • Five Hour Limit Remaining    [█████████████████████░] %96.6
+    ↳ ⏱️  Kalan Süre: 04:47:25 (4 sa 47 dk 25 sn)  |  Hedef: 2026-09-19T03:12:45Z
+    ↳ 🔥 Tüketim Hızı: %12.4/saat | Tahmini Tükenme: ~38 dakika
 
 ▶ Claude and GPT models (Models within this group: Claude Opus, Claude Sonnet, GPT-OSS)
   • Weekly Limit Remaining       [██████████████████████] %100.0
-    ↳ ⏱️  Kalan Süre: 6 gün 23 sa 58 dk  |  Hedef: 2026-09-25T22:19:48Z
+    ↳ ⏱️  Kalan Süre: 6 gün 23 sa 58 dk  |  Hedef: 2026-09-25T22:23:29Z
   • Five Hour Limit Remaining    [██████████████████████] %100.0
-    ↳ ⏱️  Kalan Süre: 04:58:49 (4 sa 58 dk 49 sn)  |  Hedef: 2026-09-19T03:19:48Z
+    ↳ ⏱️  Kalan Süre: 04:58:09 (4 sa 58 dk 9 sn)  |  Hedef: 2026-09-19T03:23:29Z
 ```
 
 ---
 
-## ⚡ Hızlı Kurulum (Tek Komut)
+## ⚡ Hızlı Kurulum
 
-Terminalinizi açın ve aşağıdaki tek satırlık komutu yapıştırın:
-
+### Yöntem 1: Tek Komutla Kurulum (Önerilen)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kuarezma/antigravity-quota-monitor/main/install.sh | bash
 ```
 
+### Yöntem 2: Homebrew ile Kurulum
+```bash
+brew tap kuarezma/antigravity
+brew install antigravity-quota-monitor
+```
+
 > [!IMPORTANT]
 > **⭐ Starware Lisans Kuralı:**  
-> Bu proje tamamen ücretsiz ve açık kaynaklıdır. Tek kullanım şartı bu repoyu **[GitHub'da Yıldızlamaktır (Star ⭐)](https://github.com/kuarezma/antigravity-quota-monitor)**. Kurulum aracı repo yıldızınızı kontrol eder veya otomatik yıldızlamanıza yardımcı olur.
+> Bu proje tamamen ücretsiz ve açık kaynaklıdır. Tek kullanım şartı bu repoyu **[GitHub'da Yıldızlamaktır (Star ⭐)](https://github.com/kuarezma/antigravity-quota-monitor)**.
 
 ---
 
-## 🛠️ Nasıl Çalışır? (Mimari)
+## 🍏 macOS Menü Çubuğu Aracı (Menubar)
+
+Menü çubuğundan anlık kota takibi yapmak için:
+
+```bash
+agy-menubar --daemon
+```
+Arka planda çalışır, en düşük kotayı ve kalan süreyi menü çubuğunda canlı gösterir.
+
+---
+
+## 🛠️ Mimari
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -103,15 +124,11 @@ curl -fsSL https://raw.githubusercontent.com/kuarezma/antigravity-quota-monitor/
 └─────────────────────────────────────────────────────────┘
 ```
 
-1. **Dinamik Port Tespiti:** Electron'un rastgele açtığı CDP portu `DevToolsActivePort` dosyasından dinamik okunur.
-2. **CSRF Korumalı RPC:** Antigravity LanguageServer motoruna yerel HTTPS RPC çağrısı (`RetrieveUserQuotaSummary`) yapılarak resmi kotalar doğrudan çekilir.
-3. **Zengin Popover & Akıllı Alerter:** Fareyle üzerine gelindiğinde tüm havuzlar açılır; kota kritik seviyelere indiğinde sistem bildirimi gönderilir.
-
 ---
 
 ## 🧪 Testleri Çalıştırma
 
-Projeyi klonladıktan sonra testleri yerel ortamınızda çalıştırabilirsiniz:
+Projeyi klonladıktan sonra test paketini çalıştırabilirsiniz:
 
 ```bash
 pip install websockets pytest
@@ -122,8 +139,6 @@ pytest tests/ -v
 
 ## 🗑️ Kaldırma (Uninstall)
 
-Eğer eklentiyi ve arka plan servisini sistemden tamamen kaldırmak isterseniz:
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kuarezma/antigravity-quota-monitor/main/install.sh | bash -s -- --uninstall
 ```
@@ -131,7 +146,6 @@ veya yerel depodan:
 ```bash
 bash install.sh --uninstall
 ```
-Tüm servisler (macOS LaunchAgent veya Linux systemd) durdurulur ve dosyalar sistemden temizlenir.
 
 ---
 

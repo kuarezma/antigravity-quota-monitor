@@ -57,6 +57,10 @@ if [ "$1" == "--uninstall" ] || [ "$1" == "-u" ]; then
 
     rm -f "$INSTALL_DIR/agy-quota"
     rm -f "$INSTALL_DIR/agy-hud-daemon"
+    rm -f "$INSTALL_DIR/agy-menubar"
+    rm -f "$INSTALL_DIR/agy-menubar.swift"
+    rm -f "$INSTALL_DIR/agy-menubar-bin"
+    killall agy-menubar-bin 2>/dev/null || true
     echo -e "${GREEN}✓ Komut dosyaları ($INSTALL_DIR) temizlendi.${NC}"
 
     rm -rf "$PLUGIN_DIR"
@@ -143,15 +147,31 @@ if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/agy-quota" ] && [ -f "$SCRIPT_D
     echo -e "${GRAY}↳ Yerel depo dosyalarından kopyalanıyor...${NC}"
     cp -f "$SCRIPT_DIR/bin/agy-quota" "$INSTALL_DIR/agy-quota"
     cp -f "$SCRIPT_DIR/bin/agy-hud-daemon" "$INSTALL_DIR/agy-hud-daemon"
+    if [ "$OS_TYPE" == "Darwin" ] && [ -f "$SCRIPT_DIR/bin/agy-menubar" ]; then
+        cp -f "$SCRIPT_DIR/bin/agy-menubar" "$INSTALL_DIR/agy-menubar"
+        cp -f "$SCRIPT_DIR/bin/agy-menubar.swift" "$INSTALL_DIR/agy-menubar.swift"
+    fi
 else
     echo -e "${GRAY}↳ GitHub deposundan en güncel dosyalar indiriliyor...${NC}"
     curl -fsSL "$RAW_BASE/bin/agy-quota" -o "$INSTALL_DIR/agy-quota"
     curl -fsSL "$RAW_BASE/bin/agy-hud-daemon" -o "$INSTALL_DIR/agy-hud-daemon"
+    if [ "$OS_TYPE" == "Darwin" ]; then
+        curl -fsSL "$RAW_BASE/bin/agy-menubar" -o "$INSTALL_DIR/agy-menubar" 2>/dev/null || true
+        curl -fsSL "$RAW_BASE/bin/agy-menubar.swift" -o "$INSTALL_DIR/agy-menubar.swift" 2>/dev/null || true
+    fi
 fi
 
 chmod +x "$INSTALL_DIR/agy-quota"
 chmod +x "$INSTALL_DIR/agy-hud-daemon"
-echo -e "${GREEN}✓ 'agy-quota' ve 'agy-hud-daemon' başarıyla kuruldu.${NC}"
+if [ "$OS_TYPE" == "Darwin" ] && [ -f "$INSTALL_DIR/agy-menubar" ]; then
+    chmod +x "$INSTALL_DIR/agy-menubar"
+    # Menubar aracını derle
+    if command -v swiftc &>/dev/null && [ -f "$INSTALL_DIR/agy-menubar.swift" ]; then
+        echo -e "${GRAY}↳ macOS menubar aracı derleniyor (Swift)...${NC}"
+        swiftc -O -o "$INSTALL_DIR/agy-menubar-bin" "$INSTALL_DIR/agy-menubar.swift" 2>/dev/null || true
+    fi
+fi
+echo -e "${GREEN}✓ Komut dosyaları başarıyla kuruldu.${NC}"
 
 # PATH Kontrolü
 if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
@@ -248,5 +268,6 @@ echo -e "Şimdi neler yapabilirsiniz:"
 echo -e " 1. ${CYAN}Sohbet Ekranı:${NC} Antigravity penceresine geçin; yazma kutusunun üstünde canlı bar görünecektir."
 echo -e " 2. ${CYAN}Zengin Hover Kartı:${NC} Barın üzerine gelerek tüm model havuzlarının ayrıntılarını görün."
 echo -e " 3. ${CYAN}Terminalden Takip:${NC} Terminalde ${YELLOW}agy-quota${NC} yazarak renkli kota grafiğini görün."
-echo -e " 4. ${CYAN}Sohbet İçinde:${NC} Sohbet kutusuna ${YELLOW}/quota${NC} yazarak limitlerinizi asistana sorabilirsiniz."
+echo -e " 4. ${CYAN}Menü Çubuğu (macOS):${NC} Menü çubuğundan takip için ${YELLOW}agy-menubar --daemon${NC} komutunu çalıştırın."
+echo -e " 5. ${CYAN}Sohbet İçinde:${NC} Sohbet kutusuna ${YELLOW}/quota${NC} yazarak limitlerinizi asistana sorabilirsiniz."
 echo ""
