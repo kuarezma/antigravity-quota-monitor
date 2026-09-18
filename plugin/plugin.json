@@ -1,0 +1,9 @@
+{
+  "name": "antigravity-quota-monitor",
+  "version": "1.0.0",
+  "description": "Antigravity anlık model kotaları, kullanım oranları ve sıfırlanma süresi takip eklentisi",
+  "author": {
+    "name": "Antigravity Topluluğu"
+  },
+  "license": "MIT"
+}
