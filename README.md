@@ -34,7 +34,7 @@
 
 ### 1. Sohbet Ekranı Görünümü (Doğal Entegrasyon)
 <p align="center">
-  <img src="assets/screenshot.png" alt="Antigravity Chat Window" width="850" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);" />
+  <img src="assets/chat-preview.png" alt="Antigravity Chat Window" width="850" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);" />
 </p>
 
 ### 2. Terminal Görünümü (`agy-quota`)
