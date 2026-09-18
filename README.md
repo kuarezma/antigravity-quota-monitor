@@ -22,7 +22,8 @@
 - ⏱️ **Canlı Saniye Saniye Geri Sayım:** Limitlerin tam olarak sıfırlanacağı zamana kalan süreyi dinamik olarak geri sayar.
 - 🎨 **Doğal Koyu Tema Uyumlu:** Antigravity'nin yerel sohbet kartı tasarımıyla (`rgba(24, 24, 27, 0.82)`) pürüzsüzce bütünleşir; göz yormayan, zarif bir kenarlığa sahiptir.
 - 🔄 **Tam Otomatik Senkronizasyon (`● Canlı`):** Her 10 saniyede bir ve pencereye her odaklanıldığında limitleri arka planda sessizce günceller (yerel RPC sorgusuyla sıfır gecikme).
-- 📌 **Sohbet Kutusu Üzerine Kenetli:** Mesajlar kaysa dahi doğrudan prompt giriş kutusunun (`Ask anything...`) hemen üstünde sabit kalır.
+- 📏 **Yatay Tek Satır & Dinamik Kapsül:** İki satıra bölünmeyen, içeriğe ve pencereye göre akıllıca genişleyip daralan zarif tek satır kapsül tasarımı. Mesajların üzerine binmez, sohbet akışıyla tam entegre çalışır.
+- 📌 **Sohbet Giriş Kutusuyla Bütünleşik:** Doğrudan prompt giriş kartının (`Ask anything...`) hemen üstünde yer alır; pencere boyutu değiştiğinde veya kenar çubuğu açılıp kapandığında merkezini ve uyumunu otomatik korur.
 - 💻 **Güçlü Terminal Arayüzü (`agy-quota`):** Terminal üzerinden renkli ANSI ilerleme çubuklarıyla detaylı kota analizi.
 - 💬 **Sohbet İçi Asistan Becerisi (`/quota`):** Antigravity içinde asistana doğrudan `/quota` yazarak limitlerinizi sorabilirsiniz.
 - 🚀 **Otomatik Arka Plan Servisi (LaunchAgent):** Bilgisayar açıldığında veya Antigravity başlatıldığında otomatik devreye girer; hiçbir şey çalıştırmanıza gerek kalmaz.
